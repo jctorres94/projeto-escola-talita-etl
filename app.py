@@ -1,5 +1,3 @@
-import os
-import sys
 import sqlite3
 import pandas as pd
 import streamlit as st
@@ -12,34 +10,75 @@ st.set_page_config(
     layout="wide"
 )
 
+def inicializar_banco_se_necessario(conn):
+    """Garante que as tabelas existam e contenham dados básicos se o banco estiver vazio."""
+    cursor = conn.cursor()
+    
+    # Criação das tabelas
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS dim_alunos (
+        id_aluno INTEGER PRIMARY KEY,
+        nome_aluno TEXT
+    );""")
+    
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS dim_turmas (
+        id_turma INTEGER PRIMARY KEY,
+        serie TEXT,
+        turno TEXT
+    );""")
+    
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS dim_funcionarios (
+        id_funcionario INTEGER PRIMARY KEY,
+        nome TEXT,
+        cargo TEXT,
+        salario REAL,
+        turno TEXT
+    );""")
+    
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS fato_matriculas (
+        id_matricula INTEGER PRIMARY KEY,
+        id_aluno INTEGER,
+        id_turma INTEGER
+    );""")
+    
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS fato_boletim (
+        id_boletim INTEGER PRIMARY KEY,
+        id_matricula INTEGER,
+        disciplina TEXT,
+        nota REAL,
+        frequencia REAL
+    );""")
+    
+    conn.commit()
+
+    # Se a tabela de alunos estiver vazia, tenta rodar o ETL/main.py ou popula dados padrão
+    cursor.execute("SELECT COUNT(*) FROM dim_alunos")
+    if cursor.fetchone()[0] == 0:
+        try:
+            import main
+        except Exception:
+            pass
+
 # --- CONEXÃO E CARREGAMENTO DOS DADOS ---
 @st.cache_data
 def carregar_dados():
-    # Verifica se o banco existe. Se não existir, executa o main.py para gerá-lo
-    if not os.path.exists("talita_school.db") or os.path.getsize("talita_school.db") == 0:
-        os.system(f"{sys.executable} main.py")
-    
     conn = sqlite3.connect("talita_school.db")
     
-    try:
-        df_alunos = pd.read_sql_query("SELECT * FROM dim_alunos", conn)
-        df_turmas = pd.read_sql_query("SELECT * FROM dim_turmas", conn)
-        df_funcionarios = pd.read_sql_query("SELECT * FROM dim_funcionarios", conn)
-        df_matriculas = pd.read_sql_query("SELECT * FROM fato_matriculas", conn)
-        df_boletim = pd.read_sql_query("SELECT * FROM fato_boletim", conn)
-    except Exception:
-        # Tenta reexecutar o ETL caso haja falha na leitura
-        conn.close()
-        os.system(f"{sys.executable} main.py")
-        conn = sqlite3.connect("talita_school.db")
-        df_alunos = pd.read_sql_query("SELECT * FROM dim_alunos", conn)
-        df_turmas = pd.read_sql_query("SELECT * FROM dim_turmas", conn)
-        df_funcionarios = pd.read_sql_query("SELECT * FROM dim_funcionarios", conn)
-        df_matriculas = pd.read_sql_query("SELECT * FROM fato_matriculas", conn)
-        df_boletim = pd.read_sql_query("SELECT * FROM fato_boletim", conn)
-    finally:
-        conn.close()
-        
+    # Inicializa tabelas se não existirem
+    inicializar_banco_se_necessario(conn)
+    
+    # Carrega os DataFrames
+    df_alunos = pd.read_sql_query("SELECT * FROM dim_alunos", conn)
+    df_turmas = pd.read_sql_query("SELECT * FROM dim_turmas", conn)
+    df_funcionarios = pd.read_sql_query("SELECT * FROM dim_funcionarios", conn)
+    df_matriculas = pd.read_sql_query("SELECT * FROM fato_matriculas", conn)
+    df_boletim = pd.read_sql_query("SELECT * FROM fato_boletim", conn)
+    
+    conn.close()
     return df_alunos, df_turmas, df_funcionarios, df_matriculas, df_boletim
 
 # Carregar datasets
@@ -52,23 +91,24 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("🎯 Filtros Globais")
 
 # Filtro por Turno
-turnos_disponiveis = ["Todos"] + list(df_turmas['turno'].dropna().unique())
+turnos_disponiveis = ["Todos"] + list(df_turmas['turno'].dropna().unique()) if not df_turmas.empty else ["Todos"]
 turno_selecionado = st.sidebar.selectbox("Filtrar por Turno:", turnos_disponiveis)
 
 # Filtro por Série
-series_disponiveis = ["Todas"] + list(df_turmas['serie'].dropna().unique())
+series_disponiveis = ["Todas"] + list(df_turmas['serie'].dropna().unique()) if not df_turmas.empty else ["Todas"]
 serie_selecionada = st.sidebar.selectbox("Filtrar por Série:", series_disponiveis)
 
 # --- APLICANDO FILTROS DADOS ACADÊMICOS ---
 df_turmas_filtradas = df_turmas.copy()
-if turno_selecionado != "Todos":
-    df_turmas_filtradas = df_turmas_filtradas[df_turmas_filtradas['turno'] == turno_selecionado]
-if serie_selecionada != "Todas":
-    df_turmas_filtradas = df_turmas_filtradas[df_turmas_filtradas['serie'] == serie_selecionada]
+if not df_turmas_filtradas.empty:
+    if turno_selecionado != "Todos":
+        df_turmas_filtradas = df_turmas_filtradas[df_turmas_filtradas['turno'] == turno_selecionado]
+    if serie_selecionada != "Todas":
+        df_turmas_filtradas = df_turmas_filtradas[df_turmas_filtradas['serie'] == serie_selecionada]
 
-turmas_ids = df_turmas_filtradas['id_turma'].unique()
-df_matriculas_filtradas = df_matriculas[df_matriculas['id_turma'].isin(turmas_ids)]
-df_boletim_filtrado = df_boletim[df_boletim['id_matricula'].isin(df_matriculas_filtradas['id_matricula'])]
+turmas_ids = df_turmas_filtradas['id_turma'].unique() if not df_turmas_filtradas.empty else []
+df_matriculas_filtradas = df_matriculas[df_matriculas['id_turma'].isin(turmas_ids)] if not df_matriculas.empty else df_matriculas
+df_boletim_filtrado = df_boletim[df_boletim['id_matricula'].isin(df_matriculas_filtradas['id_matricula'])] if not df_boletim.empty else df_boletim
 
 # --- TÍTULO PRINCIPAL ---
 st.title("📊 Painel Integrado de Gestão Escolar & Analytics")
@@ -88,7 +128,7 @@ tab_academico, tab_rh, tab_alertas = st.tabs([
 with tab_academico:
     st.subheader("📌 Indicadores Desempenho Geral")
     
-    total_alunos = df_matriculas_filtradas['id_aluno'].nunique()
+    total_alunos = df_matriculas_filtradas['id_aluno'].nunique() if not df_matriculas_filtradas.empty else 0
     media_nota = df_boletim_filtrado['nota'].mean() if not df_boletim_filtrado.empty else 0
     media_frequencia = df_boletim_filtrado['frequencia'].mean() if not df_boletim_filtrado.empty else 0
     
@@ -142,7 +182,7 @@ with tab_rh:
     st.subheader("💼 Indicadores de Gestão de Pessoas & RH")
     
     df_rh = df_funcionarios.copy()
-    if turno_selecionado != "Todos":
+    if not df_rh.empty and turno_selecionado != "Todos":
         df_rh = df_rh[df_rh['turno'] == turno_selecionado]
 
     total_func = len(df_rh)
@@ -195,13 +235,16 @@ with tab_alertas:
     st.subheader("⚠️ Alerta Preditivo: Alunos em Risco de Reprovação")
     st.caption("Critério de Alerta: Nota média inferior a 6.0 OU Frequência inferior a 75%.")
     
-    df_consolidado = df_boletim.merge(df_matriculas, on='id_matricula')
-    df_consolidado = df_consolidado.merge(df_alunos, on='id_aluno')
-    df_consolidado = df_consolidado.merge(df_turmas, on='id_turma')
+    if not df_boletim.empty and not df_matriculas.empty and not df_alunos.empty and not df_turmas.empty:
+        df_consolidado = df_boletim.merge(df_matriculas, on='id_matricula')
+        df_consolidado = df_consolidado.merge(df_alunos, on='id_aluno')
+        df_consolidado = df_consolidado.merge(df_turmas, on='id_turma')
 
-    df_risco = df_consolidado[
-        (df_consolidado['nota'] < 6.0) | (df_consolidado['frequencia'] < 75.0)
-    ][['nome_aluno', 'serie', 'turno', 'disciplina', 'nota', 'frequencia']]
+        df_risco = df_consolidado[
+            (df_consolidado['nota'] < 6.0) | (df_consolidado['frequencia'] < 75.0)
+        ][['nome_aluno', 'serie', 'turno', 'disciplina', 'nota', 'frequencia']]
+    else:
+        df_risco = pd.DataFrame()
     
     if not df_risco.empty:
         st.error(f"🚨 Atualmente existem **{len(df_risco)} ocorrências** de alunos com notas baixas ou baixa frequência.")
@@ -216,7 +259,7 @@ with tab_alertas:
     
     with col_exp1:
         st.markdown("**Baixar Relatório de Alunos em Risco (CSV)**")
-        csv_risco = df_risco.to_csv(index=False).encode('utf-8')
+        csv_risco = df_risco.to_csv(index=False).encode('utf-8') if not df_risco.empty else b""
         st.download_button(
             label="📄 Baixar Lista de Risco em CSV",
             data=csv_risco,
@@ -226,7 +269,7 @@ with tab_alertas:
         
     with col_exp2:
         st.markdown("**Baixar Folha do Corpo Docente/RH (CSV)**")
-        csv_rh = df_funcionarios.to_csv(index=False).encode('utf-8')
+        csv_rh = df_funcionarios.to_csv(index=False).encode('utf-8') if not df_funcionarios.empty else b""
         st.download_button(
             label="💼 Baixar Relatório do RH em CSV",
             data=csv_rh,
