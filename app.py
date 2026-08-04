@@ -1,5 +1,4 @@
 import os
-import sys
 import sqlite3
 import pandas as pd
 import streamlit as st
@@ -12,38 +11,112 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- GARANTE QUE O BANCO FOI GERADO VIA MAIN.PY ---
-def garantir_banco_de_dados():
-    # Executa o main.py se o arquivo do banco não existir ou estiver zerado
-    if not os.path.exists("talita_school.db") or os.path.getsize("talita_school.db") == 0:
-        try:
-            import main
-            if hasattr(main, 'main'):
-                main.main()
-        except Exception as e:
-            st.error(f"Erro ao executar main.py para inicializar o banco: {e}")
+# --- INICIALIZAÇÃO DO BANCO DE DADOS E ESTRUTURA DE TABELAS ---
+def inicializar_e_popular_banco():
+    conn = sqlite3.connect("talita_school.db")
+    cursor = conn.cursor()
+    
+    # Criar tabelas se não existirem
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS dim_alunos (
+        id_aluno INTEGER PRIMARY KEY,
+        nome_aluno TEXT
+    );""")
+    
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS dim_turmas (
+        id_turma INTEGER PRIMARY KEY,
+        serie TEXT,
+        turno TEXT
+    );""")
+    
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS dim_funcionarios (
+        id_funcionario INTEGER PRIMARY KEY,
+        nome TEXT,
+        cargo TEXT,
+        salario REAL,
+        turno TEXT
+    );""")
+    
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS fato_matriculas (
+        id_matricula INTEGER PRIMARY KEY,
+        id_aluno INTEGER,
+        id_turma INTEGER
+    );""")
+    
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS fato_boletim (
+        id_boletim INTEGER PRIMARY KEY,
+        id_matricula INTEGER,
+        disciplina TEXT,
+        nota REAL,
+        frequencia REAL
+    );""")
+    
+    conn.commit()
 
-garantir_banco_de_dados()
+    # Verificar se as tabelas estão vazias e popular se necessário
+    cursor.execute("SELECT COUNT(*) FROM dim_alunos;")
+    if cursor.fetchone()[0] == 0:
+        # Povoar dim_alunos
+        cursor.executemany("INSERT INTO dim_alunos VALUES (?, ?);", [
+            (1, "Ana Silva"), (2, "Bruno Costa"), (3, "Carla Souza"),
+            (4, "Diego Oliveira"), (5, "Elena Santos"), (6, "Felipe Lima")
+        ])
+        
+        # Povoar dim_turmas
+        cursor.executemany("INSERT INTO dim_turmas VALUES (?, ?, ?);", [
+            (101, "1º Ano EM", "Manhã"),
+            (102, "2º Ano EM", "Tarde"),
+            (103, "3º Ano EM", "Manhã")
+        ])
+        
+        # Povoar dim_funcionarios
+        cursor.executemany("INSERT INTO dim_funcionarios VALUES (?, ?, ?, ?, ?);", [
+            (1, "Prof. Roberto", "Professor", 4500.0, "Manhã"),
+            (2, "Profª. Maria", "Professor", 4800.0, "Tarde"),
+            (3, "Carlos Andrade", "Coordenador", 6500.0, "Manhã"),
+            (4, "Fernanda Lima", "Secretária", 3200.0, "Tarde")
+        ])
+        
+        # Povoar fato_matriculas
+        cursor.executemany("INSERT INTO fato_matriculas VALUES (?, ?, ?);", [
+            (1001, 1, 101), (1002, 2, 101),
+            (1003, 3, 102), (1004, 4, 102),
+            (1005, 5, 103), (1006, 6, 103)
+        ])
+        
+        # Povoar fato_boletim
+        cursor.executemany("INSERT INTO fato_boletim VALUES (?, ?, ?, ?, ?);", [
+            (1, 1001, "Matemática", 8.5, 95.0), (2, 1001, "Português", 7.0, 90.0),
+            (3, 1002, "Matemática", 5.0, 70.0), (4, 1002, "Português", 6.0, 80.0),
+            (5, 1003, "Matemática", 9.0, 98.0), (6, 1003, "Português", 8.5, 95.0),
+            (7, 1004, "Matemática", 4.5, 65.0), (8, 1004, "Português", 5.5, 72.0),
+            (9, 1005, "Matemática", 7.5, 88.0), (10, 1005, "Português", 8.0, 90.0),
+            (11, 1006, "Matemática", 6.0, 85.0), (12, 1006, "Português", 6.5, 80.0)
+        ])
+        
+        conn.commit()
+    
+    conn.close()
+
+# Executa a garantia das tabelas
+inicializar_e_popular_banco()
 
 # --- CONEXÃO E CARREGAMENTO DOS DADOS ---
 @st.cache_data
 def carregar_dados():
     conn = sqlite3.connect("talita_school.db")
     
-    try:
-        df_alunos = pd.read_sql_query("SELECT * FROM dim_alunos", conn)
-        df_turmas = pd.read_sql_query("SELECT * FROM dim_turmas", conn)
-        df_funcionarios = pd.read_sql_query("SELECT * FROM dim_funcionarios", conn)
-        df_matriculas = pd.read_sql_query("SELECT * FROM fato_matriculas", conn)
-        df_boletim = pd.read_sql_query("SELECT * FROM fato_boletim", conn)
-    except Exception as e:
-        st.error(f"Erro ao ler tabelas do banco de dados: {e}")
-        df_alunos, df_turmas, df_funcionarios, df_matriculas, df_boletim = (
-            pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-        )
-    finally:
-        conn.close()
-        
+    df_alunos = pd.read_sql_query("SELECT * FROM dim_alunos", conn)
+    df_turmas = pd.read_sql_query("SELECT * FROM dim_turmas", conn)
+    df_funcionarios = pd.read_sql_query("SELECT * FROM dim_funcionarios", conn)
+    df_matriculas = pd.read_sql_query("SELECT * FROM fato_matriculas", conn)
+    df_boletim = pd.read_sql_query("SELECT * FROM fato_boletim", conn)
+    
+    conn.close()
     return df_alunos, df_turmas, df_funcionarios, df_matriculas, df_boletim
 
 # Carregar datasets
@@ -55,35 +128,25 @@ st.sidebar.title("🏫 Talita School")
 st.sidebar.markdown("---")
 st.sidebar.subheader("🎯 Filtros Globais")
 
-# Filtro por Turno (Verificação de segurança na coluna)
-if not df_turmas.empty and 'turno' in df_turmas.columns:
-    turnos_disponiveis = ["Todos"] + list(df_turmas['turno'].dropna().unique())
-else:
-    turnos_disponiveis = ["Todos"]
+# Filtro por Turno
+turnos_disponiveis = ["Todos"] + list(df_turmas['turno'].dropna().unique()) if not df_turmas.empty else ["Todos"]
 turno_selecionado = st.sidebar.selectbox("Filtrar por Turno:", turnos_disponiveis)
 
-# Filtro por Série (Verificação de segurança na coluna)
-if not df_turmas.empty and 'serie' in df_turmas.columns:
-    series_disponiveis = ["Todas"] + list(df_turmas['serie'].dropna().unique())
-elif not df_turmas.empty and 'nome_serie' in df_turmas.columns:
-    series_disponiveis = ["Todas"] + list(df_turmas['nome_serie'].dropna().unique())
-else:
-    series_disponiveis = ["Todas"]
+# Filtro por Série
+series_disponiveis = ["Todas"] + list(df_turmas['serie'].dropna().unique()) if not df_turmas.empty else ["Todas"]
 serie_selecionada = st.sidebar.selectbox("Filtrar por Série:", series_disponiveis)
 
 # --- APLICANDO FILTROS DADOS ACADÊMICOS ---
 df_turmas_filtradas = df_turmas.copy()
 if not df_turmas_filtradas.empty:
-    if turno_selecionado != "Todos" and 'turno' in df_turmas_filtradas.columns:
+    if turno_selecionado != "Todos":
         df_turmas_filtradas = df_turmas_filtradas[df_turmas_filtradas['turno'] == turno_selecionado]
     if serie_selecionada != "Todas":
-        col_serie = 'serie' if 'serie' in df_turmas_filtradas.columns else ('nome_serie' if 'nome_serie' in df_turmas_filtradas.columns else None)
-        if col_serie:
-            df_turmas_filtradas = df_turmas_filtradas[df_turmas_filtradas[col_serie] == serie_selecionada]
+        df_turmas_filtradas = df_turmas_filtradas[df_turmas_filtradas['serie'] == serie_selecionada]
 
-turmas_ids = df_turmas_filtradas['id_turma'].unique() if not df_turmas_filtradas.empty and 'id_turma' in df_turmas_filtradas.columns else []
-df_matriculas_filtradas = df_matriculas[df_matriculas['id_turma'].isin(turmas_ids)] if not df_matriculas.empty and 'id_turma' in df_matriculas.columns else df_matriculas
-df_boletim_filtrado = df_boletim[df_boletim['id_matricula'].isin(df_matriculas_filtradas['id_matricula'])] if not df_boletim.empty and 'id_matricula' in df_boletim.columns else df_boletim
+turmas_ids = df_turmas_filtradas['id_turma'].unique() if not df_turmas_filtradas.empty else []
+df_matriculas_filtradas = df_matriculas[df_matriculas['id_turma'].isin(turmas_ids)] if not df_matriculas.empty else df_matriculas
+df_boletim_filtrado = df_boletim[df_boletim['id_matricula'].isin(df_matriculas_filtradas['id_matricula'])] if not df_boletim.empty else df_boletim
 
 # --- TÍTULO PRINCIPAL ---
 st.title("📊 Painel Integrado de Gestão Escolar & Analytics")
@@ -103,9 +166,9 @@ tab_academico, tab_rh, tab_alertas = st.tabs([
 with tab_academico:
     st.subheader("📌 Indicadores Desempenho Geral")
     
-    total_alunos = df_matriculas_filtradas['id_aluno'].nunique() if not df_matriculas_filtradas.empty and 'id_aluno' in df_matriculas_filtradas.columns else 0
-    media_nota = df_boletim_filtrado['nota'].mean() if not df_boletim_filtrado.empty and 'nota' in df_boletim_filtrado.columns else 0
-    media_frequencia = df_boletim_filtrado['frequencia'].mean() if not df_boletim_filtrado.empty and 'frequencia' in df_boletim_filtrado.columns else 0
+    total_alunos = df_matriculas_filtradas['id_aluno'].nunique() if not df_matriculas_filtradas.empty else 0
+    media_nota = df_boletim_filtrado['nota'].mean() if not df_boletim_filtrado.empty else 0
+    media_frequencia = df_boletim_filtrado['frequencia'].mean() if not df_boletim_filtrado.empty else 0
     
     col1, col2, col3 = st.columns(3)
     col1.metric("Total de Alunos Matriculados", total_alunos)
@@ -118,7 +181,7 @@ with tab_academico:
     
     with col_graf1:
         st.subheader("📚 Distribuição de Notas por Disciplina")
-        if not df_boletim_filtrado.empty and 'disciplina' in df_boletim_filtrado.columns and 'nota' in df_boletim_filtrado.columns:
+        if not df_boletim_filtrado.empty:
             media_por_materia = df_boletim_filtrado.groupby('disciplina')['nota'].mean().reset_index()
             fig_notas = px.bar(
                 media_por_materia, 
@@ -135,7 +198,7 @@ with tab_academico:
             
     with col_graf2:
         st.subheader("🗓️ Média de Frequência por Disciplina")
-        if not df_boletim_filtrado.empty and 'disciplina' in df_boletim_filtrado.columns and 'frequencia' in df_boletim_filtrado.columns:
+        if not df_boletim_filtrado.empty:
             freq_por_materia = df_boletim_filtrado.groupby('disciplina')['frequencia'].mean().reset_index()
             fig_freq = px.line(
                 freq_por_materia, 
@@ -157,12 +220,12 @@ with tab_rh:
     st.subheader("💼 Indicadores de Gestão de Pessoas & RH")
     
     df_rh = df_funcionarios.copy()
-    if not df_rh.empty and turno_selecionado != "Todos" and 'turno' in df_rh.columns:
+    if not df_rh.empty and turno_selecionado != "Todos":
         df_rh = df_rh[df_rh['turno'] == turno_selecionado]
 
     total_func = len(df_rh)
-    folha_total = df_rh['salario'].sum() if not df_rh.empty and 'salario' in df_rh.columns else 0
-    salario_medio = df_rh['salario'].mean() if not df_rh.empty and 'salario' in df_rh.columns else 0
+    folha_total = df_rh['salario'].sum() if not df_rh.empty else 0
+    salario_medio = df_rh['salario'].mean() if not df_rh.empty else 0
     
     col_rh1, col_rh2, col_rh3 = st.columns(3)
     col_rh1.metric("Total de Funcionários", total_func)
@@ -175,7 +238,7 @@ with tab_rh:
     
     with col_rh_g1:
         st.subheader("👥 Distribuição por Cargo")
-        if not df_rh.empty and 'cargo' in df_rh.columns:
+        if not df_rh.empty:
             cargos_count = df_rh['cargo'].value_counts().reset_index()
             cargos_count.columns = ['cargo', 'quantidade']
             fig_cargos = px.pie(
@@ -191,7 +254,7 @@ with tab_rh:
 
     with col_rh_g2:
         st.subheader("💰 Média Salarial por Cargo")
-        if not df_rh.empty and 'cargo' in df_rh.columns and 'salario' in df_rh.columns:
+        if not df_rh.empty:
             sal_cargo = df_rh.groupby('cargo')['salario'].mean().reset_index()
             fig_sal = px.bar(
                 sal_cargo, 
@@ -211,16 +274,13 @@ with tab_alertas:
     st.caption("Critério de Alerta: Nota média inferior a 6.0 OU Frequência inferior a 75%.")
     
     if not df_boletim.empty and not df_matriculas.empty and not df_alunos.empty and not df_turmas.empty:
-        df_consolidado = df_boletim.merge(df_matriculas, on='id_matricula', how='inner')
-        df_consolidado = df_consolidado.merge(df_alunos, on='id_aluno', how='inner')
-        df_consolidado = df_consolidado.merge(df_turmas, on='id_turma', how='inner')
-
-        col_serie = 'serie' if 'serie' in df_consolidado.columns else ('nome_serie' if 'nome_serie' in df_consolidado.columns else '')
-        cols_exibir = [c for c in ['nome_aluno', col_serie, 'turno', 'disciplina', 'nota', 'frequencia'] if c and c in df_consolidado.columns]
+        df_consolidado = df_boletim.merge(df_matriculas, on='id_matricula')
+        df_consolidado = df_consolidado.merge(df_alunos, on='id_aluno')
+        df_consolidado = df_consolidado.merge(df_turmas, on='id_turma')
 
         df_risco = df_consolidado[
             (df_consolidado['nota'] < 6.0) | (df_consolidado['frequencia'] < 75.0)
-        ][cols_exibir] if 'nota' in df_consolidado.columns and 'frequencia' in df_consolidado.columns else pd.DataFrame()
+        ][['nome_aluno', 'serie', 'turno', 'disciplina', 'nota', 'frequencia']]
     else:
         df_risco = pd.DataFrame()
     
