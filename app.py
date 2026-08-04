@@ -1,4 +1,5 @@
 import os
+import random
 import sqlite3
 import pandas as pd
 import streamlit as st
@@ -11,15 +12,13 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- RECRIAÇÃO GARANTIDA DO BANCO DE DADOS ---
-def inicializar_banco():
+# --- RECRIAÇÃO E POPULAÇÃO MASSIVA DO BANCO DE DADOS (~500 ALUNOS) ---
+def inicializar_banco_expandido():
     db_file = "talita_school.db"
-    
-    # Conecta ou cria o arquivo
     conn = sqlite3.connect(db_file)
     cursor = conn.cursor()
     
-    # Força a criação limpa das tabelas
+    # Reinicia a estrutura de tabelas
     cursor.execute("DROP TABLE IF EXISTS dim_alunos;")
     cursor.execute("DROP TABLE IF EXISTS dim_turmas;")
     cursor.execute("DROP TABLE IF EXISTS dim_funcionarios;")
@@ -32,44 +31,85 @@ def inicializar_banco():
     cursor.execute("CREATE TABLE fato_matriculas (id_matricula INTEGER PRIMARY KEY, id_aluno INTEGER, id_turma INTEGER);")
     cursor.execute("CREATE TABLE fato_boletim (id_boletim INTEGER PRIMARY KEY, id_matricula INTEGER, disciplina TEXT, nota REAL, frequencia REAL);")
     
-    # Inserção de dados
-    cursor.executemany("INSERT INTO dim_alunos VALUES (?, ?);", [
-        (1, "Ana Silva"), (2, "Bruno Costa"), (3, "Carla Souza"),
-        (4, "Diego Oliveira"), (5, "Elena Santos"), (6, "Felipe Lima")
-    ])
-    cursor.executemany("INSERT INTO dim_turmas VALUES (?, ?, ?);", [
-        (101, "1º Ano EM", "Manhã"),
-        (102, "2º Ano EM", "Tarde"),
-        (103, "3º Ano EM", "Manhã")
-    ])
-    cursor.executemany("INSERT INTO dim_funcionarios VALUES (?, ?, ?, ?, ?);", [
-        (1, "Prof. Roberto", "Professor", 4500.0, "Manhã"),
-        (2, "Profª. Maria", "Professor", 4800.0, "Tarde"),
-        (3, "Carlos Andrade", "Coordenador", 6500.0, "Manhã"),
-        (4, "Fernanda Lima", "Secretária", 3200.0, "Tarde")
-    ])
-    cursor.executemany("INSERT INTO fato_matriculas VALUES (?, ?, ?);", [
-        (1001, 1, 101), (1002, 2, 101),
-        (1003, 3, 102), (1004, 4, 102),
-        (1005, 5, 103), (1006, 6, 103)
-    ])
-    # Incluindo alunos com notas abaixo de 6.0 e frequências abaixo de 75%
-    cursor.executemany("INSERT INTO fato_boletim VALUES (?, ?, ?, ?, ?);", [
-        (1, 1001, "Matemática", 8.5, 95.0), (2, 1001, "Português", 7.0, 90.0),
-        (3, 1002, "Matemática", 5.0, 70.0), (4, 1002, "Português", 5.5, 78.0), # Bruno Costa em risco
-        (5, 1003, "Matemática", 9.0, 98.0), (6, 1003, "Português", 8.5, 95.0),
-        (7, 1004, "Matemática", 4.5, 65.0), (8, 1004, "Português", 5.5, 72.0), # Diego Oliveira em risco
-        (9, 1005, "Matemática", 7.5, 88.0), (10, 1005, "Português", 8.0, 90.0),
-        (11, 1006, "Matemática", 6.0, 85.0), (12, 1006, "Português", 6.5, 80.0)
-    ])
+    # 1. Gerar Turmas
+    series = ["1º Ano EM", "2º Ano EM", "3º Ano EM", "8º Ano EF", "9º Ano EF"]
+    turnos = ["Manhã", "Tarde", "Noite"]
+    turmas_data = []
+    id_turma_counter = 101
+    
+    for s in series:
+        for t in turnos:
+            turmas_data.append((id_turma_counter, s, t))
+            id_turma_counter += 1
+            
+    cursor.executemany("INSERT INTO dim_turmas VALUES (?, ?, ?);", turmas_data)
+    
+    # 2. Gerar ~500 Alunos e Matrículas
+    nomes_ex = ["Ana", "Bruno", "Carla", "Diego", "Elena", "Felipe", "Gabriel", "Helena", "Igor", "Julia", "Lucas", "Mariana", "Pedro", "Sofia", "Thiago", "Beatriz", "Rodrigo", "Larissa", "Mateus", "Camila"]
+    sobrenomes_ex = ["Silva", "Santos", "Oliveira", "Souza", "Rodrigues", "Ferreira", "Alves", "Pereira", "Lima", "Gomes", "Costa", "Ribeiro", "Martins", "Carvalho", "Almeida"]
+    
+    random.seed(42)  # Semente fixa para manter os dados consistentes
+    
+    alunos_data = []
+    matriculas_data = []
+    boletim_data = []
+    
+    disciplinas = ["Matemática", "Português", "História", "Geografia", "Física", "Química"]
+    
+    id_matricula_counter = 10001
+    id_boletim_counter = 1
+    
+    for id_aluno in range(1, 501):
+        nome_completo = f"{random.choice(nomes_ex)} {random.choice(sobrenomes_ex)} {random.choice(sobrenomes_ex)}"
+        alunos_data.append((id_aluno, nome_completo))
+        
+        # Sorteia uma turma para o aluno
+        id_turma_sorteada = random.choice([t[0] for t in turmas_data])
+        matriculas_data.append((id_matricula_counter, id_aluno, id_turma_sorteada))
+        
+        # Gera notas/frequências para cada disciplina do aluno
+        for disc in disciplinas:
+            # Sorteia valores variados (garantindo que uma parcela fique em risco < 6.0 ou < 75%)
+            if random.random() < 0.18:  # ~18% de chance de o aluno estar em risco nesta matéria
+                nota = round(random.uniform(2.0, 5.8), 1)
+                frequencia = round(random.uniform(50.0, 74.0), 1)
+            else:
+                nota = round(random.uniform(6.0, 10.0), 1)
+                frequencia = round(random.uniform(75.0, 100.0), 1)
+                
+            boletim_data.append((id_boletim_counter, id_matricula_counter, disc, nota, frequencia))
+            id_boletim_counter += 1
+            
+        id_matricula_counter += 1
+
+    cursor.executemany("INSERT INTO dim_alunos VALUES (?, ?);", alunos_data)
+    cursor.executemany("INSERT INTO fato_matriculas VALUES (?, ?, ?);", matriculas_data)
+    cursor.executemany("INSERT INTO fato_boletim VALUES (?, ?, ?, ?, ?);", boletim_data)
+
+    # 3. Gerar Funcionários/RH (~30 funcionários)
+    cargos_rh = [
+        ("Professor", 4500.0), ("Professor", 4800.0), ("Professor", 5200.0),
+        ("Coordenador", 6800.0), ("Secretária", 3200.0), ("Diretor", 9500.0),
+        ("Inspetor", 2800.0), ("Orientador Educacional", 5500.0)
+    ]
+    
+    funcionarios_data = []
+    for id_func in range(1, 31):
+        cargo, salario_base = random.choice(cargos_rh)
+        nome_func = f"{'Prof. ' if 'Professor' in cargo else ''}{random.choice(nomes_ex)} {random.choice(sobrenomes_ex)}"
+        turno_func = random.choice(turnos)
+        salario_final = round(salario_base + random.uniform(-300, 500), 2)
+        funcionarios_data.append((id_func, nome_func, cargo, salario_final, turno_func))
+        
+    cursor.executemany("INSERT INTO dim_funcionarios VALUES (?, ?, ?, ?, ?);", funcionarios_data)
     
     conn.commit()
     conn.close()
 
-# Executa o reset do banco na inicialização
-inicializar_banco()
+# Executa e constrói a base massiva
+inicializar_banco_expandido()
 
-# --- CARREGAMENTO DOS DADOS (Sem Cache para Garantir Atualização) ---
+# --- CARREGAMENTO DOS DADOS ---
 def carregar_dados():
     conn = sqlite3.connect("talita_school.db")
     df_alunos = pd.read_sql_query("SELECT * FROM dim_alunos", conn)
