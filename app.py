@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import plotly.express as px
+import os
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
@@ -13,6 +14,10 @@ st.set_page_config(
 # --- CONEXÃO E CARREGAMENTO DOS DADOS ---
 @st.cache_data
 def carregar_dados():
+    # Se o banco de dados não existir (comum no Streamlit Cloud), executa o main.py para criá-lo automaticamente
+    if not os.path.exists("talita_school.db"):
+        import main
+    
     conn = sqlite3.connect("talita_school.db")
     
     df_alunos = pd.read_sql_query("SELECT * FROM dim_alunos", conn)
