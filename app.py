@@ -11,57 +11,65 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- GARANTE BANCO E TABELAS COM ESTRUTURA CORRETA ---
+# --- RECRIAÇÃO GARANTIDA DO BANCO DE DADOS ---
 def inicializar_banco():
-    conn = sqlite3.connect("talita_school.db")
+    db_file = "talita_school.db"
+    
+    # Conecta ou cria o arquivo
+    conn = sqlite3.connect(db_file)
     cursor = conn.cursor()
     
-    # Recria as tabelas garantindo os nomes de colunas esperados
-    cursor.execute("CREATE TABLE IF NOT EXISTS dim_alunos (id_aluno INTEGER PRIMARY KEY, nome_aluno TEXT);")
-    cursor.execute("CREATE TABLE IF NOT EXISTS dim_turmas (id_turma INTEGER PRIMARY KEY, serie TEXT, turno TEXT);")
-    cursor.execute("CREATE TABLE IF NOT EXISTS dim_funcionarios (id_funcionario INTEGER PRIMARY KEY, nome TEXT, cargo TEXT, salario REAL, turno TEXT);")
-    cursor.execute("CREATE TABLE IF NOT EXISTS fato_matriculas (id_matricula INTEGER PRIMARY KEY, id_aluno INTEGER, id_turma INTEGER);")
-    cursor.execute("CREATE TABLE IF NOT EXISTS fato_boletim (id_boletim INTEGER PRIMARY KEY, id_matricula INTEGER, disciplina TEXT, nota REAL, frequencia REAL);")
+    # Força a criação limpa das tabelas
+    cursor.execute("DROP TABLE IF EXISTS dim_alunos;")
+    cursor.execute("DROP TABLE IF EXISTS dim_turmas;")
+    cursor.execute("DROP TABLE IF EXISTS dim_funcionarios;")
+    cursor.execute("DROP TABLE IF EXISTS fato_matriculas;")
+    cursor.execute("DROP TABLE IF EXISTS fato_boletim;")
+    
+    cursor.execute("CREATE TABLE dim_alunos (id_aluno INTEGER PRIMARY KEY, nome_aluno TEXT);")
+    cursor.execute("CREATE TABLE dim_turmas (id_turma INTEGER PRIMARY KEY, serie TEXT, turno TEXT);")
+    cursor.execute("CREATE TABLE dim_funcionarios (id_funcionario INTEGER PRIMARY KEY, nome TEXT, cargo TEXT, salario REAL, turno TEXT);")
+    cursor.execute("CREATE TABLE fato_matriculas (id_matricula INTEGER PRIMARY KEY, id_aluno INTEGER, id_turma INTEGER);")
+    cursor.execute("CREATE TABLE fato_boletim (id_boletim INTEGER PRIMARY KEY, id_matricula INTEGER, disciplina TEXT, nota REAL, frequencia REAL);")
+    
+    # Inserção de dados
+    cursor.executemany("INSERT INTO dim_alunos VALUES (?, ?);", [
+        (1, "Ana Silva"), (2, "Bruno Costa"), (3, "Carla Souza"),
+        (4, "Diego Oliveira"), (5, "Elena Santos"), (6, "Felipe Lima")
+    ])
+    cursor.executemany("INSERT INTO dim_turmas VALUES (?, ?, ?);", [
+        (101, "1º Ano EM", "Manhã"),
+        (102, "2º Ano EM", "Tarde"),
+        (103, "3º Ano EM", "Manhã")
+    ])
+    cursor.executemany("INSERT INTO dim_funcionarios VALUES (?, ?, ?, ?, ?);", [
+        (1, "Prof. Roberto", "Professor", 4500.0, "Manhã"),
+        (2, "Profª. Maria", "Professor", 4800.0, "Tarde"),
+        (3, "Carlos Andrade", "Coordenador", 6500.0, "Manhã"),
+        (4, "Fernanda Lima", "Secretária", 3200.0, "Tarde")
+    ])
+    cursor.executemany("INSERT INTO fato_matriculas VALUES (?, ?, ?);", [
+        (1001, 1, 101), (1002, 2, 101),
+        (1003, 3, 102), (1004, 4, 102),
+        (1005, 5, 103), (1006, 6, 103)
+    ])
+    # Incluindo alunos com notas abaixo de 6.0 e frequências abaixo de 75%
+    cursor.executemany("INSERT INTO fato_boletim VALUES (?, ?, ?, ?, ?);", [
+        (1, 1001, "Matemática", 8.5, 95.0), (2, 1001, "Português", 7.0, 90.0),
+        (3, 1002, "Matemática", 5.0, 70.0), (4, 1002, "Português", 5.5, 78.0), # Bruno Costa em risco
+        (5, 1003, "Matemática", 9.0, 98.0), (6, 1003, "Português", 8.5, 95.0),
+        (7, 1004, "Matemática", 4.5, 65.0), (8, 1004, "Português", 5.5, 72.0), # Diego Oliveira em risco
+        (9, 1005, "Matemática", 7.5, 88.0), (10, 1005, "Português", 8.0, 90.0),
+        (11, 1006, "Matemática", 6.0, 85.0), (12, 1006, "Português", 6.5, 80.0)
+    ])
+    
     conn.commit()
-
-    # Se dim_turmas estiver vazia, popula com os dados padrão
-    cursor.execute("SELECT COUNT(*) FROM dim_turmas;")
-    if cursor.fetchone()[0] == 0:
-        cursor.executemany("INSERT INTO dim_alunos VALUES (?, ?);", [
-            (1, "Ana Silva"), (2, "Bruno Costa"), (3, "Carla Souza"),
-            (4, "Diego Oliveira"), (5, "Elena Santos"), (6, "Felipe Lima")
-        ])
-        cursor.executemany("INSERT INTO dim_turmas VALUES (?, ?, ?);", [
-            (101, "1º Ano EM", "Manhã"),
-            (102, "2º Ano EM", "Tarde"),
-            (103, "3º Ano EM", "Manhã")
-        ])
-        cursor.executemany("INSERT INTO dim_funcionarios VALUES (?, ?, ?, ?, ?);", [
-            (1, "Prof. Roberto", "Professor", 4500.0, "Manhã"),
-            (2, "Profª. Maria", "Professor", 4800.0, "Tarde"),
-            (3, "Carlos Andrade", "Coordenador", 6500.0, "Manhã"),
-            (4, "Fernanda Lima", "Secretária", 3200.0, "Tarde")
-        ])
-        cursor.executemany("INSERT INTO fato_matriculas VALUES (?, ?, ?);", [
-            (1001, 1, 101), (1002, 2, 101),
-            (1003, 3, 102), (1004, 4, 102),
-            (1005, 5, 103), (1006, 6, 103)
-        ])
-        cursor.executemany("INSERT INTO fato_boletim VALUES (?, ?, ?, ?, ?);", [
-            (1, 1001, "Matemática", 8.5, 95.0), (2, 1001, "Português", 7.0, 90.0),
-            (3, 1002, "Matemática", 5.0, 70.0), (4, 1002, "Português", 6.0, 80.0),
-            (5, 1003, "Matemática", 9.0, 98.0), (6, 1003, "Português", 8.5, 95.0),
-            (7, 1004, "Matemática", 4.5, 65.0), (8, 1004, "Português", 5.5, 72.0),
-            (9, 1005, "Matemática", 7.5, 88.0), (10, 1005, "Português", 8.0, 90.0),
-            (11, 1006, "Matemática", 6.0, 85.0), (12, 1006, "Português", 6.5, 80.0)
-        ])
-        conn.commit()
     conn.close()
 
+# Executa o reset do banco na inicialização
 inicializar_banco()
 
-# --- CARREGAMENTO DOS DADOS ---
-@st.cache_data
+# --- CARREGAMENTO DOS DADOS (Sem Cache para Garantir Atualização) ---
 def carregar_dados():
     conn = sqlite3.connect("talita_school.db")
     df_alunos = pd.read_sql_query("SELECT * FROM dim_alunos", conn)
@@ -80,23 +88,19 @@ st.sidebar.title("🏫 Talita School")
 st.sidebar.markdown("---")
 st.sidebar.subheader("🎯 Filtros Globais")
 
-# Identificação segura de colunas
-col_turno = 'turno' if 'turno' in df_turmas.columns else None
-col_serie = 'serie' if 'serie' in df_turmas.columns else ('nome_serie' if 'nome_serie' in df_turmas.columns else None)
-
-turnos_disponiveis = ["Todos"] + list(df_turmas[col_turno].dropna().unique()) if col_turno and not df_turmas.empty else ["Todos"]
+turnos_disponiveis = ["Todos"] + list(df_turmas['turno'].dropna().unique()) if 'turno' in df_turmas.columns else ["Todos"]
 turno_selecionado = st.sidebar.selectbox("Filtrar por Turno:", turnos_disponiveis)
 
-series_disponiveis = ["Todas"] + list(df_turmas[col_serie].dropna().unique()) if col_serie and not df_turmas.empty else ["Todas"]
+series_disponiveis = ["Todas"] + list(df_turmas['serie'].dropna().unique()) if 'serie' in df_turmas.columns else ["Todas"]
 serie_selecionada = st.sidebar.selectbox("Filtrar por Série:", series_disponiveis)
 
 # --- APLICANDO FILTROS ---
 df_turmas_filtradas = df_turmas.copy()
 if not df_turmas_filtradas.empty:
-    if turno_selecionado != "Todos" and col_turno:
-        df_turmas_filtradas = df_turmas_filtradas[df_turmas_filtradas[col_turno] == turno_selecionado]
-    if serie_selecionada != "Todas" and col_serie:
-        df_turmas_filtradas = df_turmas_filtradas[df_turmas_filtradas[col_serie] == serie_selecionada]
+    if turno_selecionado != "Todos" and 'turno' in df_turmas_filtradas.columns:
+        df_turmas_filtradas = df_turmas_filtradas[df_turmas_filtradas['turno'] == turno_selecionado]
+    if serie_selecionada != "Todas" and 'serie' in df_turmas_filtradas.columns:
+        df_turmas_filtradas = df_turmas_filtradas[df_turmas_filtradas['serie'] == serie_selecionada]
 
 turmas_ids = df_turmas_filtradas['id_turma'].unique() if 'id_turma' in df_turmas_filtradas.columns else []
 df_matriculas_filtradas = df_matriculas[df_matriculas['id_turma'].isin(turmas_ids)] if 'id_turma' in df_matriculas.columns else df_matriculas
@@ -194,8 +198,7 @@ with tab_alertas:
         df_consolidado = df_consolidado.merge(df_alunos, on='id_aluno', how='inner')
         df_consolidado = df_consolidado.merge(df_turmas, on='id_turma', how='inner')
 
-        cols_existentes = [c for c in ['nome_aluno', col_serie, 'turno', 'disciplina', 'nota', 'frequencia'] if c and c in df_consolidado.columns]
-        df_risco = df_consolidado[(df_consolidado['nota'] < 6.0) | (df_consolidado['frequencia'] < 75.0)][cols_existentes] if 'nota' in df_consolidado.columns and 'frequencia' in df_consolidado.columns else pd.DataFrame()
+        df_risco = df_consolidado[(df_consolidado['nota'] < 6.0) | (df_consolidado['frequencia'] < 75.0)][['nome_aluno', 'serie', 'turno', 'disciplina', 'nota', 'frequencia']]
     else:
         df_risco = pd.DataFrame()
     
